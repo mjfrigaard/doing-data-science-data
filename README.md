@@ -1,6 +1,3 @@
-doing\_data\_science\_data
-================
-
 Cleaning Multiple Data Sets Efficiently
 =======================================
 
