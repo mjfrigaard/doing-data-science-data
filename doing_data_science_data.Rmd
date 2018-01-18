@@ -1,0 +1,248 @@
+---
+title: "doing_data_science_data"
+output: github_document
+---
+
+
+```{r setup, setup, include=FALSE}
+require(mosaic)    # Load additional packages here 
+require(tidyverse) # all the good stuff
+require(magrittr)  # pipes
+knitr::opts_chunk$set(
+    echo = TRUE,
+    tidy = FALSE,     # display code as typed
+    size = "small")   # slightly smaller font for code
+```
+
+# Cleaning Multiple Data Sets Efficiently 
+
+This little tutorial solves a problem I was having when working through the exploratory data analysis exercises in [Doing Data Science](https://www.amazon.com/Doing-Data-Science-Straight-Frontline/dp/1449358659) by [Cathy O'Neil](https://mathbabe.org/) and [Rachel Schutt](https://industry.datascience.columbia.edu/profile/rachel-schutt). I highly recommended picking up a copy for yourself. 
+
+On pages 37-38, we are instructed to do the following (paraphrasing here):
+
+This [folder](https://github.com/oreillymedia/doing_data_science) contains 31 simulated days of ads shown and clicks recorded on the New York Times home page. Rows represent users, and the variables are: `Age`, `Gender` (0 = female, 1 = male), `Impressions` (number impressions), `Clicks` (number clicks), and a binary indicator for signed in or not `Signed_in`. We need to create two new variables: `age_group`, which contains six levels of `Age` ("<18", "18-24", "25-34", "35-44", "45-54", "55-64", and "65+"), and `CTR` or clickthrough-rate, caculated as the number of clicks / the number of impressions.
+
+The EDA exercises in the book are intended for ***a single day***, but what if I wanted to look at an entire months worth of data? Luckily I remembered learning a handy workflow for processing multiple data files in the third ggplot2 course from [Datacamp](https://www.datacamp.com/courses/data-visualization-with-ggplot2-part-3) by [Rick Scavetta](https://twitter.com/rick_scavetta). If you have a situation where all your data files need similar wrangling/preparation before visulizing or modeling, you will find this helpful (I hope!).
+
+### Data files
+
+I've moved the data from the Github [repository](https://github.com/oreillymedia/doing_data_science) to a local data folder (`./data/`).
+
+### Read data files
+
+I will start by reading the first data set into RStudio using `readr::read_csv()` and then use `dplyr::glimpse()` to see what these data look like.
+
+```{r load_data}
+nyt1 <- readr::read_csv(file = "./data/nyt1.csv",
+                col_names = TRUE)
+nyt1 %>% dplyr::glimpse()
+```
+
+I see all 5 variables in this data frame. I will create a pipeline that creates the two variables from the exercises and a third `Female` variable that makes the categories in `Gender` less ambiguous. When I am done, I look at the data with `dplyr::glimpse()` again. 
+
+```{r create_nyt1}
+nyt1 <- nyt1 %>% 
+    dplyr::mutate(
+        age_group = case_when( # create age_group variable
+            Age < 18 ~ "<18",
+            Age >= 18 & Age < 25 ~ "18-24",
+            Age >= 25 & Age < 35 ~ "25-34",
+            Age >= 35 & Age < 45 ~ "35-44",
+            Age >= 45 & Age < 55 ~ "45-54",
+            Age >= 55 & Age < 65 ~ "55-64",
+            Age >= 65 ~ "65+"), 
+        CTR = Clicks/Impressions, # create CTR variable
+        Female = case_when( # create new Female variable
+            Gender == 0 ~ "Male", 
+            Gender == 1 ~ "Female",
+            TRUE ~ as.character(Gender)))
+nyt1 %>% dplyr::glimpse()
+```
+
+Now I want to bundle the data reading and preparing commands as a function, `clean_nyt`. 
+
+```{r clean_nyt}
+clean_nyt <- function(file) {
+                    nyt <- read_csv(file)
+                    nyt %>% 
+                    dplyr::mutate(
+                        age_group = case_when( # create age_group variable
+                                        Age < 18 ~ "<18",
+                            Age >= 18 & Age < 25 ~ "18-24",
+                            Age >= 25 & Age < 35 ~ "25-34",
+                            Age >= 35 & Age < 45 ~ "35-44",
+                            Age >= 45 & Age < 55 ~ "45-54",
+                            Age >= 55 & Age < 65 ~ "55-64",
+                            Age >= 65 ~ "65+"), 
+                        CTR = Clicks/Impressions, # create CTR variable
+                        Female = case_when( # create new Female variable
+                                Gender == 0 ~ "Male", 
+                                Gender == 1 ~ "Female",
+                    TRUE ~ as.character(Gender)))
+}
+```
+
+I will test `clean_nyt()` on a `nyt2.csv`
+
+```{r clean_nyt_on_nyt2}
+nyt2 <- clean_nyt("./data/nyt2.csv")
+nyt2 %>% glimpse()
+```
+
+It looks like `clean_nyt()` is working!
+
+Now I need to create a vector with the files in `dir("./data")`.  I will call this `nyt_files`. Then I will `paste0()` the file path to the files and store this in the `my_nyt_files` vector. 
+
+```{r my_nyt_files}
+nyt_files <- dir("./data")
+my_nyt_files <- paste0("./data/",nyt_files)
+my_nyt_files %>% head()
+```
+
+Great. Now I can create a `for` loop to pass the files through and build a master data frame, `my_nyt_data`.
+
+```{r my_nyt_data, message=FALSE, warning=FALSE}
+# Build my_nyt_data with a for loop
+my_nyt_data <- NULL
+for (file in my_nyt_files) { # for every file...
+    temp <- clean_nyt(file)  # clean it with clean_nyt()
+    temp$id <- sub(".csv", "", file) # add an id column (but remove .csv)
+    my_nyt_data <- rbind(my_nyt_data, temp) # then stick together by rows
+}
+my_nyt_data %>% glimpse()
+```
+
+That is a big data set--14,905,865 observations and 9 variables. 
+
+### Clean up `id`
+
+Now we just need to clean up the `id` variable a little with the `stringr::str_replace()` function and verify all 31 data sets are accounted for using `dplyr::distinct()` and `base::nrow()`.
+
+```{r clean_my_nyt_data_id}
+my_nyt_data <- my_nyt_data %>% 
+    dplyr::mutate(id = 
+                      stringr::str_replace(id, 
+                                pattern = "./data/" , 
+                                replacement = "")) 
+my_nyt_data %>% 
+    dplyr::distinct(id) %>% 
+    base::nrow()
+```
+
+### Check `age_group`
+
+Ok we should check our new variables, `age_group` and `Female`. Let's start with `age_group` using a combination of `dplyr::count()` and `tidyr::spread()`.
+
+```{r check_age_group}
+my_nyt_data %>% dplyr::count(age_group, Age) %>% 
+    tidyr::spread(age_group, n) %>% head()
+```
+
+Yikes! There are 5613610 respondents with `Age` of 0. Let's remove these using `dplyr::filter()` and re-check those zeros. 
+
+```{r get_zero_ages}
+my_nyt_data <- my_nyt_data %>%
+    filter(Age != 0)
+my_nyt_data %>% count(age_group, Age) %>% 
+    spread(age_group, n) %>% head()
+```
+
+I should also check the top of the `Age` distribution with `base::tail()`. 
+
+```{r check_top_age}
+my_nyt_data %>% count(age_group, Age) %>% 
+    spread(age_group, n) %>% tail()
+```
+
+115 is old...but *possible*. Ok I also want to add the `dplyr::filter(Age != 0)` to the `clean_nyt()` function. 
+
+```{r update_clean_nyt}
+# update function
+clean_nyt <- function(file) {
+                    nyt <- readr::read_csv(file)
+                    nyt %>% 
+                    dplyr::filter(Age != 0) %>% 
+                    dplyr::mutate(
+                        age_group = case_when( # create age_group variable
+                                        Age < 18 ~ "<18",
+                            Age >= 18 & Age < 25 ~ "18-24",
+                            Age >= 25 & Age < 35 ~ "25-34",
+                            Age >= 35 & Age < 45 ~ "35-44",
+                            Age >= 45 & Age < 55 ~ "45-54",
+                            Age >= 55 & Age < 65 ~ "55-64",
+                            Age >= 65 ~ "65+"), 
+                        CTR = Clicks/Impressions, # create CTR variable
+                        Female = case_when( # create new Female variable
+                                Gender == 0 ~ "Male", 
+                                Gender == 1 ~ "Female",
+                    TRUE ~ as.character(Gender)))
+}
+```
+
+Let's re-run the `for` loop and make sure we have nice, clean data in `my_nyt_data`.
+
+```{r re_create_my_nyt_data, message=FALSE, warning=FALSE}
+# Build my_nyt_data with a for loop
+my_nyt_data <- NULL
+for (file in my_nyt_files) { # for every file...
+    temp <- clean_nyt(file)  # clean it with clean_nyt()
+    temp$id <- sub(".csv", "", file) # add an id column (but remove .csv)
+    my_nyt_data <- rbind(my_nyt_data, temp) # then stick together by rows
+}
+my_nyt_data %>% glimpse()
+```
+
+I see a new sample size of 9,292,255--this is promising! I'll re-check the `age_group` variable. 
+
+```{r recheck_age_group_variable}
+my_nyt_data %>% count(age_group, Age) %>% 
+    spread(age_group, n)
+```
+
+That looks much better. 
+
+### Check `Female`
+
+Now check the new `Female` variable. 
+
+```{r check_Female}
+my_nyt_data %>% count(Gender, Female) %>% 
+    spread(Female, n)
+```
+
+Ok--these categories are all present and accounted for. Let's get a smaller sample of this data set to work with. I think 10% is enough. I'll grab this with `dplyr::sample_frac()`, store it as `nyt_data`, and view the contents with `dplyr::glimpse()`
+
+```{r sample_of_my_nyt_data}
+nyt_data <- dplyr::sample_frac(my_nyt_data, size = 0.1)
+nyt_data %>% dplyr::glimpse()
+```
+
+Now to get a quick look at the distribution of `CTR` by `age_group` and `Female` in this sample. 
+
+```{r nyt_data_freqpoly_CTR}
+nyt_data %>% filter(CTR != 0.0000) %>% 
+    ggplot(aes(x = CTR, color = Female)) + 
+                    geom_freqpoly(bins = 30) + 
+                    facet_wrap(~ age_group, ncol = 3)
+ggsave("nyt_data_freqpoly_CTR.png", width = 8, height = 5, unit = "in", dpi = 480)
+```
+
+There you have it! 31 clean data sets and a visualization in under 250 lines!!!!
+
+***
+
+## File creation 
+
+How was this file created?
+
+  * File creation date: `r Sys.Date()`
+  * `r R.version.string`
+  * R version (short form): `r getRversion()`
+  * `tidyverse` package version: `r packageVersion("tidyverse")`
+  * Additional session information
+  
+```{r session_info, echo=FALSE}
+devtools::session_info()  #
+```
+  
+ 
