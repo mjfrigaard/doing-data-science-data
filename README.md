@@ -362,7 +362,7 @@ nyt_data %>% filter(CTR != 0.0000) %>%
                     facet_wrap(~ age_group, ncol = 3)
 ```
 
-![](doing_data_science_data_files/figure-markdown_github/nyt_data_freqpoly_CTR-1.png)
+![](https://github.com/mjfrigaard/doing_data_science_data/blob/master/nyt_data_freqpoly_CTR.png?raw=true)
 
 ``` r
 ggsave("nyt_data_freqpoly_CTR.png", width = 8, height = 5, unit = "in", dpi = 480)
